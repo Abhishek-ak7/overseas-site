@@ -1,0 +1,1389 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model appointment_types {
+  id           String         @id
+  name         String         @unique
+  description  String?
+  price        Decimal        @db.Decimal(10, 2)
+  currency     String         @default("USD")
+  duration     Int
+  meeting_type MeetingType
+  is_active    Boolean        @default(true)
+  features     String[]
+  created_at   DateTime       @default(now())
+  updated_at   DateTime
+  appointments appointments[]
+}
+
+model appointments {
+  id                   String                 @id
+  user_id              String
+  consultant_id        String
+  type_id              String
+  title                String?
+  description          String?
+  scheduled_date       DateTime
+  scheduled_time       DateTime
+  duration             Int
+  status               AppointmentStatus      @default(SCHEDULED)
+  meeting_link         String?
+  meeting_id           String?
+  notes                String?
+  reminder_sent        Boolean                @default(false)
+  feedback             String?
+  rating               Int?
+  cancel_reason        String?
+  rescheduled_from     String?
+  created_at           DateTime               @default(now())
+  updated_at           DateTime
+  consultants          consultants            @relation(fields: [consultant_id], references: [id], onDelete: Cascade)
+  appointment_types    appointment_types      @relation(fields: [type_id], references: [id], onDelete: Cascade)
+  users                users                  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  appointment_messages appointment_messages[]
+}
+
+model appointment_messages {
+  id             String       @id
+  appointment_id String
+  sender_id      String
+  message        String
+  is_admin       Boolean      @default(false)
+  created_at     DateTime     @default(now())
+  read_at        DateTime?
+  appointments   appointments @relation(fields: [appointment_id], references: [id], onDelete: Cascade)
+  users          users        @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+
+  @@index([appointment_id])
+  @@index([sender_id])
+}
+
+model audit_logs {
+  id            String   @id
+  user_id       String?
+  action        String
+  resource_type String
+  resource_id   String?
+  old_values    Json?
+  new_values    Json?
+  ip_address    String?
+  user_agent    String?
+  details       Json?
+  created_at    DateTime @default(now())
+  users         users?   @relation(fields: [user_id], references: [id])
+}
+
+model blog_posts {
+  id              String      @id
+  title           String
+  slug            String      @unique
+  content         String
+  excerpt         String?
+  author_id       String
+  author_name     String
+  featured_image  String?
+  category_id     String?
+  status          PostStatus  @default(DRAFT)
+  published_at    DateTime?
+  seo_title       String?
+  seo_description String?
+  view_count      Int         @default(0)
+  read_time       Int?
+  created_at      DateTime    @default(now())
+  updated_at      DateTime
+  users           users       @relation(fields: [author_id], references: [id], onDelete: Cascade)
+  categories      categories? @relation(fields: [category_id], references: [id])
+  tags            tags[]      @relation("BlogPostToTag")
+}
+
+model categories {
+  id               String       @id
+  name             String       @unique
+  slug             String       @unique
+  description      String?
+  parent_id        String?
+  order_index      Int          @default(0)
+  is_active        Boolean      @default(true)
+  created_at       DateTime     @default(now())
+  updated_at       DateTime
+  blog_posts       blog_posts[]
+  categories       categories?  @relation("categoriesTocategories", fields: [parent_id], references: [id])
+  other_categories categories[] @relation("categoriesTocategories")
+  courses          courses[]
+}
+
+model consultants {
+  id             String         @id
+  name           String
+  email          String         @unique
+  phone          String?
+  bio            String?
+  specialties    String[]
+  experience     String?
+  education      String?
+  certifications String[]
+  languages      String[]
+  hourly_rate    Decimal        @db.Decimal(10, 2)
+  currency       String         @default("USD")
+  avatar_url     String?
+  is_active      Boolean        @default(true)
+  rating         Float?         @default(0)
+  total_reviews  Int            @default(0)
+  availability   Json?
+  time_zone      String         @default("UTC")
+  created_at     DateTime       @default(now())
+  updated_at     DateTime
+  appointments   appointments[]
+}
+
+model consultations {
+  id                Int       @id @default(autoincrement())
+  name              String
+  email             String
+  phone             String
+  country           String?
+  studyLevel        String?
+  fieldOfInterest   String?
+  budget            String?
+  consultationType  String
+  consultationDate  DateTime
+  message           String?
+  status            String    @default("pending")
+  preferredLanguage String    @default("english")
+  assignedCounselor String?
+  counselorNotes    String?
+  followUpRequired  Boolean   @default(false)
+  followUpDate      DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(now()) @updatedAt
+}
+
+model countries {
+  id           String   @id
+  name         String   @unique
+  code         String   @unique
+  description  String?
+  flag_url     String?
+  universities Json?
+  programs     Json?
+  requirements Json?
+  living_cost  Json?
+  scholarships Json?
+  work_rights  Json?
+  intake       Json?
+  is_popular   Boolean  @default(false)
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime
+}
+
+model course_enrollments {
+  id               String           @id
+  user_id          String
+  course_id        String
+  progress         Float            @default(0)
+  status           EnrollmentStatus @default(ACTIVE)
+  enrolled_at      DateTime         @default(now())
+  completed_at     DateTime?
+  certificate_url  String?
+  last_accessed_at DateTime?
+  courses          courses          @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  users            users            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+}
+
+model course_lessons {
+  id             String         @id
+  module_id      String
+  title          String
+  description    String?
+  order_index    Int
+  content_type   ContentType
+  content_url    String?
+  duration       Int?
+  is_published   Boolean        @default(false)
+  is_free        Boolean        @default(false)
+  created_at     DateTime       @default(now())
+  updated_at     DateTime
+  course_modules course_modules @relation(fields: [module_id], references: [id], onDelete: Cascade)
+}
+
+model course_modules {
+  id             String           @id
+  course_id      String
+  title          String
+  description    String?
+  order_index    Int
+  content_type   ContentType
+  content_url    String?
+  duration       Int?
+  is_published   Boolean          @default(false)
+  is_free        Boolean          @default(false)
+  created_at     DateTime         @default(now())
+  updated_at     DateTime
+  course_lessons course_lessons[]
+  courses        courses          @relation(fields: [course_id], references: [id], onDelete: Cascade)
+}
+
+model course_reviews {
+  id           String   @id
+  user_id      String
+  course_id    String
+  rating       Int
+  review_text  String?
+  is_published Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime
+  courses      courses  @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  users        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+}
+
+model courses {
+  id                  String               @id
+  title               String
+  slug                String               @unique
+  description         String
+  short_description   String?
+  instructor_id       String?
+  instructor_name     String
+  price               Decimal              @db.Decimal(10, 2)
+  original_price      Decimal?             @db.Decimal(10, 2)
+  currency            String               @default("USD")
+  duration            Int
+  level               CourseLevel
+  category_id         String?
+  thumbnail_url       String?
+  video_url           String?
+  is_published        Boolean              @default(false)
+  is_featured         Boolean              @default(false)
+  max_students        Int?
+  language            String               @default("English")
+  requirements        String[]
+  learning_objectives String[]
+  rating              Float?               @default(0)
+  total_ratings       Int                  @default(0)
+  total_students      Int                  @default(0)
+  created_at          DateTime             @default(now())
+  updated_at          DateTime
+  course_enrollments  course_enrollments[]
+  course_modules      course_modules[]
+  course_reviews      course_reviews[]
+  categories          categories?          @relation(fields: [category_id], references: [id])
+  live_sessions       live_sessions[]
+  transactions        transactions[]
+  tags                tags[]               @relation("CourseToTag")
+}
+
+model email_campaigns {
+  id              String              @id
+  name            String
+  subject         String
+  content         String
+  template_id     String?
+  status          EmailCampaignStatus @default(DRAFT)
+  recipient_count Int                 @default(0)
+  sent_count      Int                 @default(0)
+  opened_count    Int                 @default(0)
+  clicked_count   Int                 @default(0)
+  bounce_count    Int                 @default(0)
+  scheduled_at    DateTime?
+  sent_at         DateTime?
+  created_by      String
+  created_at      DateTime            @default(now())
+  updated_at      DateTime
+  users           users               @relation(fields: [created_by], references: [id])
+  email_templates email_templates?    @relation(fields: [template_id], references: [id])
+}
+
+model email_templates {
+  id              String            @id
+  name            String            @unique
+  subject         String
+  html_content    String
+  text_content    String?
+  template_type   String
+  category        String?
+  variables       Json?
+  is_active       Boolean           @default(true)
+  created_by      String
+  created_at      DateTime          @default(now())
+  updated_at      DateTime
+  email_campaigns email_campaigns[]
+  users           users             @relation(fields: [created_by], references: [id])
+}
+
+model features {
+  id               String   @id
+  title            String
+  description      String
+  icon             String?
+  icon_type        String   @default("lucide")
+  icon_color       String   @default("#EF4444")
+  background_color String   @default("#FFFFFF")
+  cta_text         String?
+  cta_link         String?
+  order_index      Int      @default(0)
+  is_active        Boolean  @default(true)
+  is_featured      Boolean  @default(false)
+  category         String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime
+}
+
+model hero_slides {
+  id                 String   @id
+  title              String
+  subtitle           String?
+  description        String?
+  cta_text           String?
+  cta_link           String?
+  secondary_cta_text String?
+  secondary_cta_link String?
+  background_image   String?
+  background_video   String?
+  text_color         String   @default("#FFFFFF")
+  overlay_color      String?
+  overlay_opacity    Float    @default(0.3)
+  order_index        Int      @default(0)
+  is_active          Boolean  @default(true)
+  display_duration   Int      @default(5000)
+  animation_type     String   @default("fade")
+  mobile_image       String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime
+}
+
+model journey_steps {
+  id               String   @id
+  title            String
+  description      String
+  icon             String?
+  icon_type        String   @default("lucide")
+  icon_color       String   @default("#6B7280")
+  background_color String   @default("#FFFFFF")
+  cta_text         String?
+  cta_link         String?
+  order_index      Int      @default(0)
+  is_active        Boolean  @default(true)
+  is_featured      Boolean  @default(false)
+  category         String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime
+}
+
+model live_sessions {
+  id               String            @id
+  course_id        String?
+  title            String
+  description      String?
+  instructor       String
+  platform         String
+  meeting_id       String?
+  meeting_url      String?
+  password         String?
+  max_participants Int?
+  scheduled_at     DateTime
+  duration         Int
+  status           LiveSessionStatus @default(SCHEDULED)
+  recording_url    String?
+  attendance_count Int               @default(0)
+  created_by       String
+  created_at       DateTime          @default(now())
+  updated_at       DateTime
+  courses          courses?          @relation(fields: [course_id], references: [id])
+  users            users             @relation(fields: [created_by], references: [id])
+}
+
+model media {
+  id            String   @id
+  file_name     String
+  original_name String
+  mime_type     String
+  file_size     Int
+  width         Int?
+  height        Int?
+  url           String
+  alt_text      String?
+  caption       String?
+  description   String?
+  uploaded_by   String
+  is_public     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime
+  users         users    @relation(fields: [uploaded_by], references: [id], onDelete: Cascade)
+}
+
+model menus {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  description String?
+  location    String
+  is_active   Boolean      @default(true)
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  items       menu_items[]
+}
+
+model menu_items {
+  id          String       @id @default(cuid())
+  menu_id     String
+  label       String
+  url         String
+  type        String       @default("custom")
+  order_index Int          @default(0)
+  is_active   Boolean      @default(true)
+  parent_id   String?
+  category    String?
+  description String?
+  target      String       @default("_self")
+  css_class   String?
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  menu        menus        @relation(fields: [menu_id], references: [id], onDelete: Cascade)
+  parent      menu_items?  @relation("MenuItemParent", fields: [parent_id], references: [id])
+  children    menu_items[] @relation("MenuItemParent")
+
+  @@index([menu_id, order_index])
+}
+
+model newsletter_subscribers {
+  id              String    @id
+  email           String    @unique
+  first_name      String?
+  last_name       String?
+  is_active       Boolean   @default(true)
+  subscribed_at   DateTime  @default(now())
+  unsubscribed_at DateTime?
+  source          String?
+  interests       String[]
+  tags            String[]
+  last_email_sent DateTime?
+  emails_sent     Int       @default(0)
+  created_at      DateTime  @default(now())
+  updated_at      DateTime
+}
+
+model notifications {
+  id         String           @id
+  user_id    String
+  title      String
+  message    String
+  type       NotificationType
+  is_read    Boolean          @default(false)
+  action_url String?
+  metadata   Json?
+  created_at DateTime         @default(now())
+}
+
+model pages {
+  id               String          @id
+  title            String
+  slug             String          @unique
+  content          String
+  excerpt          String?
+  meta_title       String?
+  meta_description String?
+  meta_keywords    String?
+  featured_image   String?
+  template         String?
+  is_published     Boolean         @default(false)
+  published_at     DateTime?
+  author_id        String
+  created_at       DateTime        @default(now())
+  updated_at       DateTime
+  users            users           @relation(fields: [author_id], references: [id])
+  page_sections    page_sections[]
+}
+
+model partners {
+  id               String   @id
+  name             String
+  logo_url         String?
+  website_url      String?
+  country          String?
+  partner_type     String   @default("university")
+  description      String?
+  ranking          Int?
+  established_year Int?
+  student_count    Int?
+  courses_offered  String[]
+  is_active        Boolean  @default(true)
+  is_featured      Boolean  @default(false)
+  is_preferred     Boolean  @default(false)
+  order_index      Int      @default(0)
+  contact_email    String?
+  contact_phone    String?
+  address          String?
+  city             String?
+  state            String?
+  zip_code         String?
+  latitude         Float?
+  longitude        Float?
+  created_at       DateTime @default(now())
+  updated_at       DateTime
+}
+
+model questions {
+  id             String          @id
+  test_id        String
+  section_id     String
+  question_text  String
+  question_type  QuestionType
+  options        Json?
+  correct_answer String
+  explanation    String?
+  points         Int             @default(1)
+  difficulty     DifficultyLevel @default(MEDIUM)
+  tags           String[]
+  audio_url      String?
+  image_url      String?
+  order_index    Int
+  created_at     DateTime        @default(now())
+  updated_at     DateTime
+  test_sections  test_sections   @relation(fields: [section_id], references: [id], onDelete: Cascade)
+}
+
+model seo_metadata {
+  id                  String   @id
+  resource_type       String
+  resource_id         String
+  meta_title          String?
+  meta_description    String?
+  meta_keywords       String?
+  og_title            String?
+  og_description      String?
+  og_image            String?
+  twitter_title       String?
+  twitter_description String?
+  twitter_image       String?
+  canonical_url       String?
+  robots              String?
+  schema_markup       Json?
+  created_at          DateTime @default(now())
+  updated_at          DateTime
+
+  @@unique([resource_type, resource_id])
+}
+
+model services {
+  id               String   @id
+  title            String
+  description      String
+  icon             String?
+  icon_type        String   @default("lucide")
+  icon_color       String   @default("#6B7280")
+  background_color String   @default("#FFFFFF")
+  cta_text         String?
+  cta_link         String?
+  order_index      Int      @default(0)
+  is_active        Boolean  @default(true)
+  is_featured      Boolean  @default(false)
+  category         String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime
+}
+
+model settings {
+  id          String   @id
+  key         String   @unique
+  value       Json
+  description String?
+  is_public   Boolean  @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime
+}
+
+model site_settings {
+  id                    String   @id
+  site_name             String   @default("BnOverseas")
+  site_tagline          String?
+  site_description      String?
+  logo_url              String?
+  favicon_url           String?
+  primary_color         String   @default("#3B82F6")
+  secondary_color       String   @default("#64748B")
+  accent_color          String   @default("#EF4444")
+  background_color      String   @default("#FFFFFF")
+  text_color            String   @default("#1F2937")
+  link_color            String   @default("#3B82F6")
+  heading_font          String   @default("Inter")
+  body_font             String   @default("Inter")
+  font_size             String   @default("16px")
+  container_width       String   @default("1200px")
+  border_radius         String   @default("8px")
+  spacing               String   @default("16px")
+  contact_email         String?
+  contact_phone         String?
+  contact_address       String?
+  business_hours        String?
+  facebook_url          String?
+  twitter_url           String?
+  linkedin_url          String?
+  instagram_url         String?
+  youtube_url           String?
+  meta_title            String?
+  meta_description      String?
+  meta_keywords         String?
+  google_analytics_id   String?
+  google_tag_manager_id String?
+  facebook_pixel_id     String?
+  copyright_text        String?
+  footer_text           String?
+  from_email            String?
+  from_name             String?
+  reply_to_email        String?
+  maintenance_mode      Boolean  @default(false)
+  maintenance_message   String?
+  created_at            DateTime @default(now())
+  updated_at            DateTime
+}
+
+model social_accounts {
+  id                  String    @id
+  user_id             String
+  provider            String
+  provider_account_id String
+  access_token        String?
+  refresh_token       String?
+  expires_at          DateTime?
+  token_type          String?
+  scope               String?
+  id_token            String?
+  session_state       String?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime
+  users               users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, provider_account_id])
+}
+
+model statistics {
+  id                 String   @id
+  label              String
+  value              String
+  icon               String?
+  icon_color         String   @default("#EF4444")
+  background_color   String   @default("#FFFFFF")
+  is_animated        Boolean  @default(true)
+  animation_duration Int      @default(2000)
+  suffix             String?
+  prefix             String?
+  order_index        Int      @default(0)
+  is_active          Boolean  @default(true)
+  category           String?
+  auto_update        Boolean  @default(false)
+  query_source       String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime
+}
+
+model subscriptions {
+  id                   String             @id
+  user_id              String
+  plan_type            String
+  status               SubscriptionStatus @default(ACTIVE)
+  current_period_start DateTime
+  current_period_end   DateTime
+  cancel_at_period_end Boolean            @default(false)
+  canceled_at          DateTime?
+  trial_start          DateTime?
+  trial_end            DateTime?
+  subscription_id      String?
+  created_at           DateTime           @default(now())
+  updated_at           DateTime
+}
+
+model tags {
+  id          String       @id
+  name        String       @unique
+  slug        String       @unique
+  description String?
+  color       String?
+  created_at  DateTime     @default(now())
+  updated_at  DateTime
+  blog_posts  blog_posts[] @relation("BlogPostToTag")
+  courses     courses[]    @relation("CourseToTag")
+}
+
+model test_attempts {
+  id              String        @id
+  user_id         String
+  test_id         String
+  score           Float?
+  total_questions Int
+  correct_answers Int           @default(0)
+  answers         Json
+  time_spent      Int?
+  status          AttemptStatus @default(IN_PROGRESS)
+  started_at      DateTime      @default(now())
+  completed_at    DateTime?
+  section_scores  Json?
+  tests           tests         @relation(fields: [test_id], references: [id], onDelete: Cascade)
+  users           users         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model test_sections {
+  id             String      @id
+  test_id        String
+  section_name   String
+  description    String?
+  order_index    Int
+  question_count Int
+  time_limit     Int?
+  instructions   String?
+  questions      questions[]
+  tests          tests       @relation(fields: [test_id], references: [id], onDelete: Cascade)
+}
+
+model testimonials {
+  id           String   @id
+  student_name String
+  content      String
+  rating       Int
+  course_id    String?
+  country      String?
+  university   String?
+  program      String?
+  image_url    String?
+  video_url    String?
+  is_published Boolean  @default(false)
+  is_featured  Boolean  @default(false)
+  position     Int?
+  created_at   DateTime @default(now())
+  updated_at   DateTime
+}
+
+model tests {
+  id               String          @id
+  title            String
+  slug             String          @unique
+  description      String
+  type             TestType
+  duration         Int
+  total_questions  Int
+  passing_score    Int?
+  difficulty_level DifficultyLevel
+  price            Decimal         @db.Decimal(10, 2)
+  is_published     Boolean         @default(false)
+  is_free          Boolean         @default(false)
+  instructions     String?
+  tags             String[]
+  created_at       DateTime        @default(now())
+  updated_at       DateTime
+  test_attempts    test_attempts[]
+  test_sections    test_sections[]
+}
+
+model transactions {
+  id               String            @id
+  user_id          String
+  amount           Decimal           @db.Decimal(10, 2)
+  currency         String            @default("USD")
+  status           TransactionStatus @default(PENDING)
+  type             TransactionType
+  description      String?
+  payment_method   String?
+  payment_gateway  String?
+  reference_id     String?
+  gateway_response Json?
+  course_id        String?
+  appointment_id   String?
+  failure_reason   String?
+  refund_amount    Decimal?          @db.Decimal(10, 2)
+  refund_reason    String?
+  created_at       DateTime          @default(now())
+  updated_at       DateTime
+  courses          courses?          @relation(fields: [course_id], references: [id])
+  users            users             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model user_profiles {
+  id                    String    @id
+  user_id               String    @unique
+  avatar_url            String?
+  bio                   String?
+  date_of_birth         DateTime?
+  address               String?
+  city                  String?
+  state                 String?
+  zip_code              String?
+  emergency_contact     String?
+  preferences           Json?
+  notification_settings Json?
+  social_links          Json?
+  interested_countries  String[]
+  field_of_interest     String?
+  budget_range          String?
+  intake_preference     String?
+  users                 users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model user_sessions {
+  id          String   @id
+  user_id     String
+  token       String   @unique
+  device_info String?
+  ip_address  String?
+  user_agent  String?
+  expires_at  DateTime
+  created_at  DateTime @default(now())
+  users       users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model document_submissions {
+  id                    String   @id @default(cuid())
+  student_name          String
+  email                 String
+  phone                 String
+  country               String
+  study_level           String
+  field_of_interest     String
+  target_countries      String[]
+  status                String   @default("draft")
+  completion_percentage Float    @default(0)
+  categories            Json
+  assigned_reviewer     String?
+  review_notes          String?
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+}
+
+model university_inquiries {
+  id                 String   @id @default(cuid())
+  university_ids     String[]
+  name               String?
+  email              String?
+  phone              String?
+  type               String   @default("information_request")
+  status             String   @default("pending")
+  assigned_counselor String?
+  counselor_notes    String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+}
+
+model universities {
+  id                     String     @id @default(cuid())
+  name                   String
+  slug                   String     @unique
+  country                String
+  city                   String
+  state                  String?
+  address                String?    @db.Text
+  postal_code            String?
+  logo_url               String?
+  banner_url             String?
+  images                 String[]
+  website                String?
+  email                  String?
+  phone                  String?
+  description            String?    @db.Text
+  about                  String?    @db.Text
+  facilities             String[]
+  type                   String?
+  established_year       Int?
+  accreditation          String?
+  ranking_national       Int?
+  ranking_world          Int?
+  student_count          Int?
+  international_students Int?
+  acceptance_rate        Float?
+  avg_tuition_fee        Decimal?   @db.Decimal(10, 2)
+  currency               String     @default("USD")
+  campus_size            String?
+  departments            String[]
+  notable_alumni         String[]
+  partnerships           String[]
+  admission_requirements String?    @db.Text
+  application_deadline   String?
+  language_requirement   String?
+  tags                   String[]
+  meta_title             String?
+  meta_description       String?
+  is_featured            Boolean    @default(false)
+  is_published           Boolean    @default(false)
+  view_count             Int        @default(0)
+  created_at             DateTime   @default(now())
+  updated_at             DateTime   @updatedAt
+  programs               programs[]
+
+  @@index([country, is_published])
+  @@index([slug])
+}
+
+model contact_inquiries {
+  id                String    @id @default(cuid())
+  full_name         String
+  email             String
+  phone             String?
+  study_destination String?
+  message           String?
+  source            String    @default("hero_form")
+  status            String    @default("new")
+  priority          String    @default("medium")
+  assigned_to       String?
+  admin_notes       String?
+  responded_at      DateTime?
+  resolved_at       DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+}
+
+model consultation_inquiries {
+  id                String    @id @default(cuid())
+  full_name         String
+  email             String
+  phone             String?
+  query_type        String
+  study_destination String?
+  current_education String?
+  message           String?
+  source            String    @default("consultation_form")
+  status            String    @default("new")
+  priority          String    @default("medium")
+  assigned_to       String?
+  admin_notes       String?
+  responded_at      DateTime?
+  resolved_at       DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+}
+
+model messages {
+  id          String    @id @default(cuid())
+  full_name   String
+  email       String
+  phone       String?
+  subject     String?
+  message     String
+  source      String    @default("contact_form")
+  status      String    @default("new")
+  priority    String    @default("medium")
+  assigned_to String?
+  admin_notes String?
+  replied_at  DateTime?
+  closed_at   DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+}
+
+model users {
+  id                   String                 @id
+  email                String                 @unique
+  password_hash        String
+  first_name           String
+  last_name            String
+  phone                String?
+  country              String?
+  study_level          String?
+  role                 UserRole               @default(STUDENT)
+  is_verified          Boolean                @default(false)
+  verification_token   String?
+  verification_otp     String?
+  otp_expiry           DateTime?
+  email_verified_at    DateTime?
+  profile_picture      String?
+  reset_token          String?
+  reset_token_expiry   DateTime?
+  last_login           DateTime?
+  created_at           DateTime               @default(now())
+  updated_at           DateTime
+  appointments         appointments[]
+  appointment_messages appointment_messages[]
+  audit_logs           audit_logs[]
+  blog_posts           blog_posts[]
+  course_enrollments   course_enrollments[]
+  course_reviews       course_reviews[]
+  email_campaigns      email_campaigns[]
+  email_templates      email_templates[]
+  events               events[]
+  live_sessions        live_sessions[]
+  media                media[]
+  pages                pages[]
+  social_accounts      social_accounts[]
+  test_attempts        test_attempts[]
+  transactions         transactions[]
+  user_profiles        user_profiles?
+  user_sessions        user_sessions[]
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  RESCHEDULED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+  TIMED_OUT
+}
+
+enum ContentType {
+  VIDEO
+  PDF
+  QUIZ
+  ASSIGNMENT
+  TEXT
+  AUDIO
+  LIVE_SESSION
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum DifficultyLevel {
+  EASY
+  MEDIUM
+  HARD
+  EXPERT
+}
+
+enum EmailCampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  SUSPENDED
+  REFUNDED
+}
+
+enum LiveSessionStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  CANCELLED
+  POSTPONED
+}
+
+enum MeetingType {
+  VIDEO
+  PHONE
+  IN_PERSON
+  CHAT
+}
+
+enum MenuLocation {
+  HEADER_PRIMARY
+  HEADER_SECONDARY
+  FOOTER_PRIMARY
+  FOOTER_SECONDARY
+  SIDEBAR
+  MOBILE
+}
+
+enum NotificationType {
+  COURSE_ENROLLMENT
+  COURSE_COMPLETION
+  APPOINTMENT_REMINDER
+  APPOINTMENT_CONFIRMATION
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  TEST_COMPLETED
+  SYSTEM_UPDATE
+  MARKETING
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  ESSAY
+  FILL_BLANK
+  LISTENING
+  SPEAKING
+  READING
+}
+
+enum SectionType {
+  HERO
+  FEATURES
+  SERVICES
+  STATISTICS
+  TESTIMONIALS
+  PARTNERS
+  NEWS
+  CONTACT
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  UNPAID
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+}
+
+enum TestType {
+  IELTS
+  TOEFL
+  PTE
+  GRE
+  GMAT
+  SAT
+  ACT
+  DUOLINGO
+  CAEL
+  CELPIP
+  CUSTOM
+}
+
+enum ThemeMode {
+  LIGHT
+  DARK
+  AUTO
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum TransactionType {
+  COURSE_PURCHASE
+  APPOINTMENT_BOOKING
+  SUBSCRIPTION
+  REFUND
+  COMMISSION
+}
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum WidgetType {
+  TEXT
+  IMAGE
+  SOCIAL_LINKS
+  CONTACT_INFO
+  RECENT_POSTS
+  CATEGORIES
+  NEWSLETTER
+  CUSTOM
+}
+
+model page_sections {
+  id           String      @id @default(cuid())
+  page_id      String
+  section_type SectionType
+  title        String?
+  content      String?
+  data         Json?
+  order_index  Int         @default(0)
+  is_active    Boolean     @default(true)
+  created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
+  pages        pages       @relation(fields: [page_id], references: [id], onDelete: Cascade)
+
+  @@index([page_id, order_index])
+}
+
+model faqs {
+  id          String   @id @default(cuid())
+  question    String
+  answer      String
+  category    String?
+  page_slug   String?
+  order_index Int      @default(0)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([page_slug, category, order_index])
+}
+
+model benefits {
+  id               String   @id @default(cuid())
+  title            String
+  description      String
+  icon             String?
+  icon_type        String   @default("lucide")
+  icon_color       String   @default("#3B82F6")
+  background_color String   @default("#FFFFFF")
+  page_slug        String?
+  category         String?
+  order_index      Int      @default(0)
+  is_active        Boolean  @default(true)
+  is_featured      Boolean  @default(false)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([page_slug, category, order_index])
+}
+
+model costs {
+  id          String   @id @default(cuid())
+  country     String
+  category    String
+  item        String
+  amount_min  Decimal? @db.Decimal(10, 2)
+  amount_max  Decimal? @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  description String?
+  notes       String?
+  order_index Int      @default(0)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([country, category])
+}
+
+
+model programs {
+  id                    String        @id @default(cuid())
+  university_id         String
+  name                  String
+  slug                  String        @unique
+  degree_type           String        // Bachelor, Master, PhD, Diploma
+  discipline            String        // Engineering, Business, Medicine
+  specialization        String?
+  duration_years        Float?
+  duration_months       Int?
+  intake_months         String[]      // ["January", "September"]
+  featured_image        String?
+  images                String[]
+  description           String?       @db.Text
+  overview              String?       @db.Text
+  curriculum            String?       @db.Text
+  career_opportunities  String?       @db.Text
+  tuition_fee           Decimal?      @db.Decimal(10, 2)
+  application_fee       Decimal?      @db.Decimal(10, 2)
+  currency              String        @default("USD")
+  scholarship_available Boolean       @default(false)
+  scholarship_details   String?       @db.Text
+  hostel_available      Boolean       @default(false)
+  hostel_fee            Decimal?      @db.Decimal(10, 2)
+  living_cost_min       Decimal?      @db.Decimal(10, 2)
+  living_cost_max       Decimal?      @db.Decimal(10, 2)
+  total_seats           Int?
+  international_seats   Int?
+  language_requirement  String?
+  min_gpa               Float?
+  entrance_exam         String?
+  work_permit           Boolean       @default(false)
+  pr_pathway            Boolean       @default(false)
+  internship_included   Boolean       @default(false)
+  online_available      Boolean       @default(false)
+  requirements          String?       @db.Text
+  documents_needed      String[]
+  job_prospects         String[]
+  average_salary        Decimal?      @db.Decimal(10, 2)
+  tags                  String[]
+  meta_title            String?
+  meta_description      String?
+  is_featured           Boolean       @default(false)
+  is_published          Boolean       @default(false)
+  view_count            Int           @default(0)
+  created_at            DateTime      @default(now())
+  updated_at            DateTime      @updatedAt
+  university            universities  @relation(fields: [university_id], references: [id], onDelete: Cascade)
+
+  @@index([university_id, is_published])
+  @@index([discipline, degree_type])
+  @@index([slug])
+}
+
+model events {
+  id              String   @id @default(cuid())
+  title           String
+  slug            String   @unique
+  description     String?
+  content         String
+  excerpt         String?
+  featured_image  String?
+  images          String[]
+  event_type      String?  // Workshop, Seminar, Webinar, Fair, etc.
+  category        String?
+  
+  // Event details
+  venue           String?
+  address         String?
+  city            String?
+  country         String?
+  is_online       Boolean  @default(false)
+  meeting_link    String?
+  
+  // Date & Time
+  start_date      DateTime
+  end_date        DateTime?
+  registration_deadline DateTime?
+  
+  // Registration
+  is_free         Boolean  @default(true)
+  price           Decimal? @db.Decimal(10, 2)
+  currency        String   @default("USD")
+  max_attendees   Int?
+  registration_link String?
+  
+  // Organizer
+  organizer_name  String?
+  organizer_email String?
+  organizer_phone String?
+  
+  // Author & Status
+  author_id       String
+  is_published    Boolean  @default(false)
+  is_featured     Boolean  @default(false)
+  
+  // Engagement
+  view_count      Int      @default(0)
+  attendee_count  Int      @default(0)
+  
+  // SEO
+  meta_title      String?
+  meta_description String?
+  tags            String[]
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  users           users    @relation(fields: [author_id], references: [id], onDelete: Cascade)
+  
+  @@index([slug])
+  @@index([start_date])
+  @@index([is_published, is_featured])
+  @@index([event_type, category])
+}

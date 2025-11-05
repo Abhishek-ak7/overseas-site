@@ -1,0 +1,9 @@
+ansible/
+terraform/
+.env
+.env.local
+*.pem
+id_rsa
+id_rsa.pub
+node_modules/
+.next/
