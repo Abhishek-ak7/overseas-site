@@ -8,7 +8,7 @@
     app_user: ubuntu
     app_group: ubuntu
     node_version: "20"
-    repo_url: "https://github.com/ArcaneNova/overseas-site.git"
+    repo_url: "https://github.com/Abhishek-ak7/overseas-site.git"
     app_directory: "/var/www/{{ app_name }}"
     domain_name: "{{ ansible_host }}"  # ✅ use EC2 public IP automatically
 
