@@ -1,0 +1,52 @@
+services:
+  deployment:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bnoverseas-deployment
+    working_dir: /workspace
+
+    volumes:
+      # Mount your project structure
+      - ./terraform:/workspace/terraform
+      - ./ansible:/workspace/ansible
+      - ./deployment:/workspace/deployment
+
+      # ✅ Mount SSH keys (used for Terraform + Ansible)
+      - ${USERPROFILE}/.ssh:/root/.ssh
+
+      # ✅ Mount AWS credentials (make it writable for region config)
+      - ${USERPROFILE}/.aws:/root/.aws
+
+      # ✅ Persist Terraform data and plugins
+      - terraform-data:/workspace/terraform/.terraform
+      - terraform-plugins:/root/.terraform.d
+
+    environment:
+      # ✅ AWS Configuration
+      AWS_DEFAULT_REGION: ap-south-1
+      AWS_SDK_LOAD_CONFIG: "1"
+
+      # ✅ Terraform Configuration
+      TF_LOG: INFO
+      TF_INPUT: "0"
+
+      # ✅ Ansible Configuration
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      ANSIBLE_STDOUT_CALLBACK: default
+      ANSIBLE_DISPLAY_OK_HOSTS: "true"
+      ANSIBLE_DISPLAY_SKIPPED_HOSTS: "false"
+      ANSIBLE_RESULT_FORMAT: yaml
+
+    # Keep container interactive
+    stdin_open: true
+    tty: true
+
+    # Allow Ansible SSH directly to EC2
+    network_mode: host
+
+volumes:
+  terraform-data:
+    driver: local
+  terraform-plugins:
+    driver: local

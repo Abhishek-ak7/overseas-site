@@ -1,0 +1,8 @@
+# Ignore unnecessary files in Docker build
+node_modules/
+.git/
+.env
+*.log
+terraform/.terraform/
+terraform/terraform.tfstate*
+ansible/*.retry

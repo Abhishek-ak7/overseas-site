@@ -58,7 +58,7 @@ export function Header() {
         <div className="max-w-7xl mx-auto px-4 lg:px-8 py-2">
           <div className="flex items-center justify-between gap-4">
             <div className="text-white text-sm font-medium hidden lg:block">
-              Fulfill your dream to Study Abroad
+              Hii devops
             </div>
             <div className="flex-1 lg:flex-initial lg:w-96 ml-auto">
               <div className="relative">

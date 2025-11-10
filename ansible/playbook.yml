@@ -8,9 +8,9 @@
     app_user: ubuntu
     app_group: ubuntu
     node_version: "20"
-    repo_url: "https://github.com/yourusername/your-nextjs-app.git"
+    repo_url: "https://github.com/ArcaneNova/overseas-site.git"
     app_directory: "/var/www/{{ app_name }}"
-    domain_name: "your-domain.com"  # Update this with your domain
+    domain_name: "{{ ansible_host }}"  # ✅ use EC2 public IP automatically
 
   tasks:
     # Step 1: System Updates
@@ -45,8 +45,7 @@
 
     - name: Install Node.js and npm
       apt:
-        name:
-          - nodejs
+        name: nodejs
         state: present
 
     - name: Verify Node.js installation
@@ -58,7 +57,7 @@
       debug:
         msg: "{{ node_version_check.stdout }}"
 
-    # Step 3: Install Nginx
+    # Step 3: Install and Start Nginx
     - name: Install Nginx
       apt:
         name: nginx
@@ -71,29 +70,16 @@
         state: started
 
     # Step 4: Configure Firewall
-    - name: Enable UFW
-      ufw:
-        state: enabled
-        policy: deny
-        direction: incoming
-
-    - name: Allow SSH through firewall
+    - name: Allow HTTP, HTTPS, and SSH
       ufw:
         rule: allow
-        port: "22"
+        port: "{{ item }}"
         proto: tcp
-
-    - name: Allow HTTP through firewall
-      ufw:
-        rule: allow
-        port: "80"
-        proto: tcp
-
-    - name: Allow HTTPS through firewall
-      ufw:
-        rule: allow
-        port: "443"
-        proto: tcp
+      loop:
+        - "22"
+        - "80"
+        - "443"
+      ignore_errors: yes
 
     # Step 5: Clone Repository
     - name: Create app directory
@@ -110,26 +96,27 @@
         dest: "{{ app_directory }}"
         version: main
       become_user: "{{ app_user }}"
-      register: git_clone
-      failed_when: 
-        - git_clone.failed
-        - "'fatal' in git_clone.msg"
+
+    # ✅ Step 5.5: Add Swap Space to prevent npm install memory crash
+    - name: Add 2GB swap space if not exists
+      shell: |
+        if [ ! -f /swapfile ]; then
+          sudo fallocate -l 2G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+        fi
+      become: yes
 
     # Step 6: Install Dependencies and Build
-    - name: Install npm dependencies
+    - name: Install npm dependencies (ignore peer dependency conflicts)
       shell: |
         cd {{ app_directory }}
-        npm install
+        npm install --legacy-peer-deps --no-audit --no-fund
       become_user: "{{ app_user }}"
       environment:
-        NODE_ENV: production
-
-    - name: Generate Prisma client
-      shell: |
-        cd {{ app_directory }}
-        npm run db:generate
-      become_user: "{{ app_user }}"
-      ignore_errors: yes
+        NODE_OPTIONS: "--max-old-space-size=1024"
 
     - name: Build Next.js application
       shell: |
@@ -138,232 +125,60 @@
       become_user: "{{ app_user }}"
       environment:
         NODE_ENV: production
+        NODE_OPTIONS: "--max-old-space-size=1024"
 
-    # Step 7: Install and Configure PM2
+    # Step 7: Install and Start with PM2
     - name: Install PM2 globally
       npm:
         name: pm2
         global: yes
 
-    - name: Create PM2 ecosystem config file
-      copy:
-        dest: "{{ app_directory }}/ecosystem.config.js"
-        content: |
-          module.exports = {
-            apps: [
-              {
-                name: "{{ app_name }}",
-                script: "npm",
-                args: "start",
-                cwd: "{{ app_directory }}",
-                instances: "max",
-                exec_mode: "cluster",
-                env: {
-                  NODE_ENV: "production",
-                  PORT: {{ app_port }}
-                },
-                error_file: "logs/error.log",
-                out_file: "logs/out.log",
-                log_date_format: "YYYY-MM-DD HH:mm:ss Z",
-                merge_logs: true,
-                autorestart: true,
-                watch: false,
-                max_memory_restart: "500M"
-              }
-            ]
-          }
-        owner: "{{ app_user }}"
-        group: "{{ app_group }}"
-        mode: '0644'
-
-    - name: Create logs directory
-      file:
-        path: "{{ app_directory }}/logs"
-        state: directory
-        owner: "{{ app_user }}"
-        group: "{{ app_group }}"
-        mode: '0755'
-
     - name: Start application with PM2
       shell: |
         cd {{ app_directory }}
-        pm2 start ecosystem.config.js
+        pm2 start npm --name "{{ app_name }}" -- start
         pm2 startup
         pm2 save
       become_user: "{{ app_user }}"
-      environment:
-        NODE_ENV: production
-      register: pm2_start
-      changed_when: "'started' in pm2_start.stdout"
 
-    # Step 8: Configure Nginx as Reverse Proxy
-    - name: Create Nginx configuration
+    # Step 8: Configure Nginx Reverse Proxy
+    - name: Create Nginx configuration for public IP
       copy:
         dest: /etc/nginx/sites-available/nextjs
         content: |
-          upstream nextjs {
-            server 127.0.0.1:{{ app_port }};
-          }
-
           server {
               listen 80;
               server_name {{ domain_name }} _;
-              client_max_body_size 20M;
 
               location / {
-                  proxy_pass http://nextjs;
+                  proxy_pass http://127.0.0.1:{{ app_port }};
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection 'upgrade';
                   proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
                   proxy_cache_bypass $http_upgrade;
-                  proxy_read_timeout 30s;
-              }
-
-              location /_next/static/ {
-                  proxy_pass http://nextjs;
-                  proxy_cache_valid 60m;
-                  proxy_cache_bypass $http_upgrade;
-                  expires 30d;
-                  add_header Cache-Control "public, immutable";
-              }
-
-              location /api/ {
-                  proxy_pass http://nextjs;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-                  proxy_read_timeout 60s;
               }
           }
         owner: root
         group: root
         mode: '0644'
 
-    - name: Enable Nginx site
+    - name: Enable Nginx site and reload
       shell: |
         ln -sf /etc/nginx/sites-available/nextjs /etc/nginx/sites-enabled/nextjs
         rm -f /etc/nginx/sites-enabled/default
-      register: nginx_enable
-      changed_when: "'ln:' in nginx_enable.stderr or nginx_enable.rc == 0"
+        nginx -t
+        systemctl reload nginx
 
-    - name: Test Nginx configuration
-      shell: nginx -t
-      register: nginx_test
-      changed_when: false
+    # Step 9: Skip SSL (since no domain)
+    - name: Skipping SSL setup (no domain)
+      debug:
+        msg: "Skipping Certbot SSL setup — no domain provided. Access your app via http://{{ domain_name }}/"
 
-    - name: Reload Nginx
-      systemd:
-        name: nginx
-        state: reloaded
-
-    # Step 9: SSL Certificate (Let's Encrypt)
-    - name: Install Certbot and Nginx plugin
-      apt:
-        name:
-          - certbot
-          - python3-certbot-nginx
-        state: present
-
-    - name: Create SSL certificate (if domain is configured)
-      shell: |
-        certbot --nginx -d {{ domain_name }} --non-interactive --agree-tos -m admin@{{ domain_name }} --redirect
-      when: domain_name != "your-domain.com"
-      ignore_errors: yes
-
-    # Step 10: Configure log rotation
-    - name: Create logrotate configuration
-      copy:
-        dest: /etc/logrotate.d/nextjs-app
-        content: |
-          {{ app_directory }}/logs/*.log {
-              daily
-              rotate 7
-              compress
-              delaycompress
-              notifempty
-              create 0640 {{ app_user }} {{ app_group }}
-              sharedscripts
-              postrotate
-                  systemctl reload nginx
-              endscript
-          }
-        owner: root
-        group: root
-        mode: '0644'
-
-    # Step 11: Create deployment helper scripts
-    - name: Create deployment scripts directory
-      file:
-        path: "{{ app_directory }}/scripts"
-        state: directory
-        owner: "{{ app_user }}"
-        group: "{{ app_group }}"
-        mode: '0755'
-
-    - name: Create update script
-      copy:
-        dest: "{{ app_directory }}/scripts/update.sh"
-        content: |
-          #!/bin/bash
-          set -e
-          echo "Pulling latest changes..."
-          cd {{ app_directory }}
-          git pull origin main
-          echo "Installing dependencies..."
-          npm install
-          echo "Generating Prisma..."
-          npm run db:generate || true
-          echo "Building application..."
-          npm run build
-          echo "Restarting PM2..."
-          pm2 restart all
-          pm2 save
-          echo "Deployment complete!"
-        owner: "{{ app_user }}"
-        group: "{{ app_group }}"
-        mode: '0755'
-
-    - name: Create status check script
-      copy:
-        dest: "{{ app_directory }}/scripts/status.sh"
-        content: |
-          #!/bin/bash
-          echo "=== PM2 Status ==="
-          pm2 status
-          echo ""
-          echo "=== Application Logs ==="
-          pm2 logs --lines 50 --nostream
-        owner: "{{ app_user }}"
-        group: "{{ app_group }}"
-        mode: '0755'
-
-    # Step 12: Summary
+    # Step 10: Display Summary
     - name: Display deployment summary
       debug:
         msg:
-          - "========================================="
-          - "✅ Next.js Application Deployed Successfully!"
-          - "========================================="
-          - "Application Name: {{ app_name }}"
-          - "Application Directory: {{ app_directory }}"
-          - "Application Port: {{ app_port }}"
-          - "Domain: {{ domain_name }}"
-          - ""
-          - "📋 Useful Commands:"
-          - "  - Check status: pm2 status"
-          - "  - View logs: pm2 logs"
-          - "  - Restart app: pm2 restart all"
-          - "  - Redeploy: cd {{ app_directory }} && ./scripts/update.sh"
-          - ""
-          - "🌍 Access your application:"
-          - "  - HTTP: http://{{ domain_name }}"
-          - "  - HTTPS: https://{{ domain_name }}"
-          - "========================================="
+          - "✅ Next.js App Deployed Successfully!"
+          - "Access it via: http://{{ domain_name }}/"
+          - "PM2 app name: {{ app_name }}"
