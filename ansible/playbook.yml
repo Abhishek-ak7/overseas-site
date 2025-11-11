@@ -1,5 +1,5 @@
 ---
-- name: Setup Next.js Application on AWS EC2
+- name: Setup & Deploy Next.js Application on AWS EC2
   hosts: nextjs
   become: yes
   vars:
@@ -13,15 +13,18 @@
     domain_name: "{{ ansible_host }}"  # ✅ use EC2 public IP automatically
 
   tasks:
+
     # Step 1: System Updates
     - name: Update package manager cache
       apt:
         update_cache: yes
         cache_valid_time: 3600
+      tags: ['setup']
 
     - name: Upgrade all packages
       apt:
         upgrade: dist
+      tags: ['setup']
 
     - name: Install basic dependencies
       apt:
@@ -36,38 +39,45 @@
           - net-tools
           - python3-pip
         state: present
+      tags: ['setup']
 
     # Step 2: Install Node.js
     - name: Add Node.js repository
       shell: curl -fsSL https://deb.nodesource.com/setup_{{ node_version }}.x | bash -
       args:
         creates: /etc/apt/sources.list.d/nodesource.list
+      tags: ['setup']
 
     - name: Install Node.js and npm
       apt:
         name: nodejs
         state: present
+      tags: ['setup']
 
     - name: Verify Node.js installation
       shell: node -v && npm -v
       register: node_version_check
       changed_when: false
+      tags: ['setup']
 
     - name: Display Node.js and npm version
       debug:
         msg: "{{ node_version_check.stdout }}"
+      tags: ['setup']
 
     # Step 3: Install and Start Nginx
     - name: Install Nginx
       apt:
         name: nginx
         state: present
+      tags: ['setup']
 
     - name: Start Nginx service
       systemd:
         name: nginx
         enabled: yes
         state: started
+      tags: ['setup']
 
     # Step 4: Configure Firewall
     - name: Allow HTTP, HTTPS, and SSH
@@ -80,8 +90,9 @@
         - "80"
         - "443"
       ignore_errors: yes
+      tags: ['setup']
 
-    # Step 5: Clone Repository
+    # Step 5: App Directory
     - name: Create app directory
       file:
         path: "{{ app_directory }}"
@@ -89,15 +100,20 @@
         owner: "{{ app_user }}"
         group: "{{ app_group }}"
         mode: '0755'
+      tags: ['deploy']
 
-    - name: Clone Next.js repository
+    # ✅ Step 5.1: Always pull latest repo code from GitHub
+    - name: Pull latest Next.js code from GitHub
       git:
         repo: "{{ repo_url }}"
         dest: "{{ app_directory }}"
         version: main
+        update: yes      # ✅ always check for new commits
+        force: yes       # ✅ overwrite local changes
       become_user: "{{ app_user }}"
+      tags: ['deploy']
 
-    # ✅ Step 5.5: Add Swap Space to prevent npm install memory crash
+    # ✅ Step 5.2: Add swap memory (for safe npm builds)
     - name: Add 2GB swap space if not exists
       shell: |
         if [ ! -f /swapfile ]; then
@@ -108,6 +124,7 @@
           echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
         fi
       become: yes
+      tags: ['deploy']
 
     # Step 6: Install Dependencies and Build
     - name: Install npm dependencies (ignore peer dependency conflicts)
@@ -117,6 +134,7 @@
       become_user: "{{ app_user }}"
       environment:
         NODE_OPTIONS: "--max-old-space-size=1024"
+      tags: ['deploy']
 
     - name: Build Next.js application
       shell: |
@@ -126,20 +144,24 @@
       environment:
         NODE_ENV: production
         NODE_OPTIONS: "--max-old-space-size=1024"
+      tags: ['deploy']
 
     # Step 7: Install and Start with PM2
     - name: Install PM2 globally
       npm:
         name: pm2
         global: yes
+      tags: ['deploy']
 
     - name: Start application with PM2
       shell: |
         cd {{ app_directory }}
+        pm2 delete "{{ app_name }}" || true
         pm2 start npm --name "{{ app_name }}" -- start
         pm2 startup
         pm2 save
       become_user: "{{ app_user }}"
+      tags: ['deploy']
 
     # Step 8: Configure Nginx Reverse Proxy
     - name: Create Nginx configuration for public IP
@@ -162,6 +184,7 @@
         owner: root
         group: root
         mode: '0644'
+      tags: ['deploy']
 
     - name: Enable Nginx site and reload
       shell: |
@@ -169,11 +192,13 @@
         rm -f /etc/nginx/sites-enabled/default
         nginx -t
         systemctl reload nginx
+      tags: ['deploy']
 
     # Step 9: Skip SSL (since no domain)
     - name: Skipping SSL setup (no domain)
       debug:
         msg: "Skipping Certbot SSL setup — no domain provided. Access your app via http://{{ domain_name }}/"
+      tags: ['deploy']
 
     # Step 10: Display Summary
     - name: Display deployment summary
@@ -182,3 +207,4 @@
           - "✅ Next.js App Deployed Successfully!"
           - "Access it via: http://{{ domain_name }}/"
           - "PM2 app name: {{ app_name }}"
+      tags: ['deploy']
