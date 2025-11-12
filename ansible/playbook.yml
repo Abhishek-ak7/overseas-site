@@ -11,7 +11,7 @@
     repo_url: "https://github.com/Abhishek-ak7/overseas-site.git"
     app_directory: "/var/www/{{ app_name }}"
     env_file: "{{ app_directory }}/.env.local"
-    domain_name: "{{ ansible_host }}"  # ✅ Automatically use EC2 public IP
+    domain_name: "{{ ansible_host }}"  # Automatically use EC2 public IP
 
   tasks:
 
@@ -80,7 +80,7 @@
         state: started
       tags: ['setup']
 
-    # ✅ Step 4: Configure Firewall (fixed using community.general.ufw)
+    # Step 4: Configure Firewall
     - name: Allow HTTP, HTTPS, and SSH
       community.general.ufw:
         rule: allow
@@ -134,26 +134,29 @@
       become: yes
       tags: ['deploy']
 
-    # Step 5.3: Setup Environment File
-    - name: Copy .env.example to .env.local
+    # ✅ Step 5.3: Safe Environment File Setup (never fails)
+    - name: Ensure environment file exists (copy or create empty)
       ansible.builtin.shell: |
-        cp {{ app_directory }}/.env.example {{ env_file }}
+        if [ -f {{ app_directory }}/.env.example ]; then
+          echo "✅ Found .env.example, copying to .env.local";
+          cp {{ app_directory }}/.env.example {{ env_file }};
+        else
+          echo "⚠️  .env.example not found, creating empty .env.local file";
+          touch {{ env_file }};
+          echo "# .env.local created by Ansible" > {{ env_file }};
+        fi
         chown {{ app_user }}:{{ app_group }} {{ env_file }}
         chmod 600 {{ env_file }}
       become: yes
       tags: ['deploy']
 
-    - name: Display environment file setup message
+    - name: Confirm environment file setup
       ansible.builtin.debug:
         msg:
-          - "⚠️  Environment file created at {{ env_file }}"
-          - "⚠️  IMPORTANT: Update environment variables before running!"
-          - "  SSH into instance and edit: nano {{ env_file }}"
-          - "  Required variables:"
-          - "    - DATABASE_URL (PostgreSQL connection string)"
-          - "    - NEXTAUTH_SECRET (random secret key)"
-          - "    - AWS credentials (if using S3)"
-          - "    - Razorpay credentials (if using payments)"
+          - "✅ Environment file is ready at {{ env_file }}"
+          - "⚠️  Edit it manually on server if empty:"
+          - "   ssh ubuntu@{{ ansible_host }} && nano {{ env_file }}"
+          - "   Add values for DATABASE_URL, NEXTAUTH_SECRET, AWS keys, etc."
       tags: ['deploy']
 
     # Step 6: Install Dependencies and Build
