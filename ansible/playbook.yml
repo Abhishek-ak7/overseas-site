@@ -126,6 +126,26 @@
       become: yes
       tags: ['deploy']
 
+    # ✅ Step 5.7: Setup Environment File
+    - name: Copy .env.example to .env.local
+      shell: |
+        cp {{ app_directory }}/.env.example {{ env_file }}
+        chown {{ app_user }}:{{ app_group }} {{ env_file }}
+        chmod 600 {{ env_file }}
+      become: yes
+
+    - name: Display environment file setup message
+      debug:
+        msg:
+          - "⚠️  Environment file created at {{ env_file }}"
+          - "⚠️  IMPORTANT: Update environment variables before running!"
+          - "  SSH into instance and edit: nano {{ env_file }}"
+          - "  Required variables:"
+          - "    - DATABASE_URL (PostgreSQL connection string)"
+          - "    - NEXTAUTH_SECRET (random secret key)"
+          - "    - AWS credentials (if using S3)"
+          - "    - Razorpay credentials (if using payments)"
+
     # Step 6: Install Dependencies and Build
     - name: Install npm dependencies (ignore peer dependency conflicts)
       shell: |
@@ -136,6 +156,30 @@
         NODE_OPTIONS: "--max-old-space-size=1024"
       tags: ['deploy']
 
+    # ✅ Step 6.5: Generate Prisma Client
+    - name: Generate Prisma Client
+      shell: |
+        cd {{ app_directory }}
+        npx prisma generate
+      become_user: "{{ app_user }}"
+      environment:
+        NODE_OPTIONS: "--max-old-space-size=1024"
+
+    # ✅ Step 6.7: Load environment and run Prisma migrations
+    - name: Run Prisma database migrations
+      shell: |
+        cd {{ app_directory }}
+        if [ -f .env.local ]; then
+          npx prisma db push --skip-generate
+        else
+          echo "⚠️  Skipping Prisma migration - .env.local not configured yet"
+        fi
+      become_user: "{{ app_user }}"
+      environment:
+        NODE_OPTIONS: "--max-old-space-size=1024"
+      ignore_errors: yes
+
+    # Step 7: Build Next.js Application
     - name: Build Next.js application
       shell: |
         cd {{ app_directory }}
@@ -162,6 +206,8 @@
         pm2 save
       become_user: "{{ app_user }}"
       tags: ['deploy']
+      environment:
+        PATH: "/usr/bin:{{ ansible_env.PATH }}"
 
     # Step 8: Configure Nginx Reverse Proxy
     - name: Create Nginx configuration for public IP
@@ -171,6 +217,7 @@
           server {
               listen 80;
               server_name {{ domain_name }} _;
+              client_max_body_size 100M;
 
               location / {
                   proxy_pass http://127.0.0.1:{{ app_port }};
@@ -178,6 +225,9 @@
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection 'upgrade';
                   proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme; 
                   proxy_cache_bypass $http_upgrade;
               }
           }

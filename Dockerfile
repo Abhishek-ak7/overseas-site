@@ -1,63 +1,96 @@
-# ------------------------------------------------------------
-# 🐳 Dockerfile for Terraform + Ansible + AWS CLI Environment
-# Author: Abhishek Kumar
-# ------------------------------------------------------------
-FROM ubuntu:22.04
+# ============================================================
+# 🐳 Multi-stage Dockerfile for Next.js Application
+# Author: DevOps Team
+# Description: Optimized Next.js build with Prisma support
+# ============================================================
 
-# Prevent interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TERRAFORM_VERSION=1.6.6
-ENV ANSIBLE_VERSION=2.15.8
+# Stage 1: Dependencies
+# ============================================================
+FROM node:20-alpine AS deps
 
-# ------------------------------------------------------------
-# Install base dependencies
-# ------------------------------------------------------------
-RUN apt-get update && apt-get install -y \
-    curl \
-    wget \
-    unzip \
-    git \
-    openssh-client \
-    python3 \
-    python3-pip \
-    software-properties-common \
-    gnupg \
-    lsb-release \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache libc6-compat
 
-# ------------------------------------------------------------
-# Install Terraform
-# ------------------------------------------------------------
-RUN wget https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip \
-    && unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip \
-    && mv terraform /usr/local/bin/ \
-    && rm terraform_${TERRAFORM_VERSION}_linux_amd64.zip
+WORKDIR /app
 
-# ------------------------------------------------------------
-# Install AWS CLI v2
-# ------------------------------------------------------------
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
-    && unzip awscliv2.zip \
-    && ./aws/install \
-    && rm -rf aws awscliv2.zip
+# Copy package files
+COPY package.json package-lock.json ./
 
-# ------------------------------------------------------------
-# Install Ansible Core + AWS SDK for Python
-# ------------------------------------------------------------
-RUN pip3 install --no-cache-dir \
-    ansible-core==${ANSIBLE_VERSION} \
-    boto3 \
-    botocore
-    
-# Install Ansible collections
-RUN ansible-galaxy collection install community.general
+# Install all dependencies (including devDependencies for build)
+RUN npm ci
 
-# ------------------------------------------------------------
-# Setup working environment
-# ------------------------------------------------------------
-WORKDIR /workspace
+# ============================================================
+# Stage 2: Builder
+# ============================================================
+FROM node:20-alpine AS builder
 
-# Create directories for SSH and AWS credentials
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy all application files
+COPY . .
+
+# Set environment variables for build
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+# ✅ Generate Prisma Client before build
+RUN npx prisma generate
+
+# ✅ Build Next.js application
+RUN npm run build
+
+# ============================================================
+# Stage 3: Production Runner
+# ============================================================
+FROM node:20-alpine AS runner
+
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# Set production environment
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Create non-root user for security
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy necessary production files from builder
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/next.config.mjs ./next.config.mjs
+
+# Copy .next build output (standalone mode)
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Install only production dependencies
+RUN npm ci --omit=dev
+
+# Set correct permissions
+RUN chown -R nextjs:nodejs /app
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+# Start application
+CMD ["node", "server.js"]
 RUN mkdir -p /root/.ssh /root/.aws && chmod 700 /root/.ssh
 
 # Add Terraform and Ansible aliases for convenience
