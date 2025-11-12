@@ -156,30 +156,6 @@
         NODE_OPTIONS: "--max-old-space-size=1024"
       tags: ['deploy']
 
-    # ✅ Step 6.5: Generate Prisma Client
-    - name: Generate Prisma Client
-      shell: |
-        cd {{ app_directory }}
-        npx prisma generate
-      become_user: "{{ app_user }}"
-      environment:
-        NODE_OPTIONS: "--max-old-space-size=1024"
-
-    # ✅ Step 6.7: Load environment and run Prisma migrations
-    - name: Run Prisma database migrations
-      shell: |
-        cd {{ app_directory }}
-        if [ -f .env.local ]; then
-          npx prisma db push --skip-generate
-        else
-          echo "⚠️  Skipping Prisma migration - .env.local not configured yet"
-        fi
-      become_user: "{{ app_user }}"
-      environment:
-        NODE_OPTIONS: "--max-old-space-size=1024"
-      ignore_errors: yes
-
-    # Step 7: Build Next.js Application
     - name: Build Next.js application
       shell: |
         cd {{ app_directory }}
@@ -206,8 +182,7 @@
         pm2 save
       become_user: "{{ app_user }}"
       tags: ['deploy']
-      environment:
-        PATH: "/usr/bin:{{ ansible_env.PATH }}"
+
 
     # Step 8: Configure Nginx Reverse Proxy
     - name: Create Nginx configuration for public IP
@@ -225,9 +200,6 @@
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection 'upgrade';
                   proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme; 
                   proxy_cache_bypass $http_upgrade;
               }
           }
