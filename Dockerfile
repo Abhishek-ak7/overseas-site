@@ -31,11 +31,12 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
     && ./aws/install \
     && rm -rf aws awscliv2.zip
 
-# Install Ansible
+# Install Ansible Core + AWS SDKs + Community Collection
 RUN pip3 install --no-cache-dir \
-    ansible==${ANSIBLE_VERSION} \
-    boto3 \
-    botocore
+    ansible-core==${ANSIBLE_VERSION} \
+    boto3==1.34.0 \
+    botocore==1.34.0 \
+ && ansible-galaxy collection install community.general
 
 # Create working directory
 WORKDIR /workspace
