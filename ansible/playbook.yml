@@ -11,23 +11,21 @@
     repo_url: "https://github.com/Abhishek-ak7/overseas-site.git"
     app_directory: "/var/www/{{ app_name }}"
     env_file: "{{ app_directory }}/.env.local"
-    domain_name: "{{ ansible_host }}"  # Automatically use EC2 public IP
+    domain_name: "{{ ansible_host }}"  # EC2 public IP auto
 
   tasks:
 
     # Step 1: System Updates
-    - name: Update package manager cache
+    - name: Update apt cache
       ansible.builtin.apt:
         update_cache: yes
         cache_valid_time: 3600
-      tags: ['setup']
 
-    - name: Upgrade all packages
+    - name: Upgrade packages
       ansible.builtin.apt:
         upgrade: dist
-      tags: ['setup']
 
-    - name: Install basic dependencies
+    - name: Install dependencies
       ansible.builtin.apt:
         name:
           - curl
@@ -40,205 +38,166 @@
           - net-tools
           - python3-pip
         state: present
-      tags: ['setup']
 
     # Step 2: Install Node.js
-    - name: Add Node.js repository
+    - name: Add NodeSource repo
       ansible.builtin.shell: curl -fsSL https://deb.nodesource.com/setup_{{ node_version }}.x | bash -
       args:
         creates: /etc/apt/sources.list.d/nodesource.list
-      tags: ['setup']
 
-    - name: Install Node.js and npm
+    - name: Install nodejs
       ansible.builtin.apt:
         name: nodejs
         state: present
-      tags: ['setup']
 
-    - name: Verify Node.js installation
+    - name: Show installed Node + npm
       ansible.builtin.shell: node -v && npm -v
-      register: node_version_check
+      register: versions
       changed_when: false
-      tags: ['setup']
 
-    - name: Display Node.js and npm version
-      ansible.builtin.debug:
-        msg: "{{ node_version_check.stdout }}"
-      tags: ['setup']
+    - ansible.builtin.debug:
+        msg: "{{ versions.stdout }}"
 
-    # Step 3: Install and Start Nginx
-    - name: Install Nginx
+    # Step 3: Install & Start Nginx
+    - name: Install nginx
       ansible.builtin.apt:
         name: nginx
         state: present
-      tags: ['setup']
 
-    - name: Start Nginx service
+    - name: Enable nginx
       ansible.builtin.systemd:
         name: nginx
         enabled: yes
         state: started
-      tags: ['setup']
 
-    # Step 4: Configure Firewall
-    - name: Allow HTTP, HTTPS, and SSH
+    # Step 4: Firewall
+    - name: Allow essential ports
       community.general.ufw:
         rule: allow
         port: "{{ item }}"
         proto: tcp
-      loop:
-        - "22"
-        - "80"
-        - "443"
+      loop: [ "22", "80", "443" ]
       ignore_errors: yes
-      tags: ['setup']
 
-    - name: Enable UFW firewall
+    - name: Enable UFW
       community.general.ufw:
         state: enabled
         policy: allow
       ignore_errors: yes
-      tags: ['setup']
 
     # Step 5: App Directory
-    - name: Create app directory
+    - name: Ensure app directory exists
       ansible.builtin.file:
         path: "{{ app_directory }}"
         state: directory
-        owner: "{{ app_user }}"
-        group: "{{ app_group }}"
+        owner: ubuntu
+        group: ubuntu
         mode: '0755'
-      tags: ['deploy']
 
-    # Step 5.1: Pull latest repo code from GitHub
-    - name: Pull latest Next.js code from GitHub
+    # Step 5.1: Pull Latest Repo
+    - name: Clone repository
       ansible.builtin.git:
         repo: "{{ repo_url }}"
         dest: "{{ app_directory }}"
         version: main
         update: yes
         force: yes
-      become_user: "{{ app_user }}"
-      tags: ['deploy']
+      become_user: ubuntu
 
-    # Step 5.2: Add swap memory (for npm builds)
-    - name: Add 2GB swap space if not exists
+    # Step 5.2: Swap for NPM Builds
+    - name: Create 2GB swap if not exists
       ansible.builtin.shell: |
         if [ ! -f /swapfile ]; then
-          sudo fallocate -l 2G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+          fallocate -l 2G /swapfile
+          chmod 600 /swapfile
+          mkswap /swapfile
+          swapon /swapfile
+          echo "/swapfile none swap sw 0 0" >> /etc/fstab
         fi
-      become: yes
-      tags: ['deploy']
 
-    # ✅ Step 5.3: Safe Environment File Setup (never fails)
-    - name: Ensure environment file exists (copy or create empty)
+    # Step 5.3: Safe .env.local
+    - name: Ensure env file exists
       ansible.builtin.shell: |
         if [ -f {{ app_directory }}/.env.example ]; then
-          echo "✅ Found .env.example, copying to .env.local";
           cp {{ app_directory }}/.env.example {{ env_file }};
         else
-          echo "⚠️  .env.example not found, creating empty .env.local file";
-          touch {{ env_file }};
-          echo "# .env.local created by Ansible" > {{ env_file }};
+          echo "# created by Ansible" > {{ env_file }};
         fi
-        chown {{ app_user }}:{{ app_group }} {{ env_file }}
+        chown ubuntu:ubuntu {{ env_file }}
         chmod 600 {{ env_file }}
-      become: yes
-      tags: ['deploy']
 
-    - name: Confirm environment file setup
+    - name: Notify about env
       ansible.builtin.debug:
         msg:
-          - "✅ Environment file is ready at {{ env_file }}"
-          - "⚠️  Edit it manually on server if empty:"
-          - "   ssh ubuntu@{{ ansible_host }} && nano {{ env_file }}"
-          - "   Add values for DATABASE_URL, NEXTAUTH_SECRET, AWS keys, etc."
-      tags: ['deploy']
+          - "Edit env file manually: nano {{ env_file }}"
+          - "Add DATABASE_URL, NEXTAUTH_SECRET, AWS keys, etc."
 
-    # Step 6: Install Dependencies and Build
-    - name: Install npm dependencies
+    # Step 6: npm install + build
+    - name: Install dependencies
       ansible.builtin.shell: |
         cd {{ app_directory }}
         npm install --legacy-peer-deps --no-audit --no-fund
-      become_user: "{{ app_user }}"
+      become_user: ubuntu
       environment:
         NODE_OPTIONS: "--max-old-space-size=1024"
-      tags: ['deploy']
 
-    - name: Build Next.js application
+    - name: Build Next.js
       ansible.builtin.shell: |
         cd {{ app_directory }}
         npm run build
-      become_user: "{{ app_user }}"
+      become_user: ubuntu
       environment:
         NODE_ENV: production
         NODE_OPTIONS: "--max-old-space-size=1024"
-      tags: ['deploy']
 
-    # Step 7: Install and Start with PM2
-    - name: Install PM2 globally
+    # Step 7: PM2
+    - name: Install pm2
       community.general.npm:
         name: pm2
         global: yes
-      tags: ['deploy']
 
-    - name: Start application with PM2
+    - name: Start app with PM2
       ansible.builtin.shell: |
         cd {{ app_directory }}
         pm2 delete "{{ app_name }}" || true
         pm2 start npm --name "{{ app_name }}" -- start
         pm2 startup
         pm2 save
-      become_user: "{{ app_user }}"
-      tags: ['deploy']
+      become_user: ubuntu
 
-    # Step 8: Configure Nginx Reverse Proxy
-    - name: Create Nginx configuration for public IP
+    # Step 8: NGINX Reverse Proxy
+    - name: Configure Nginx site
       ansible.builtin.copy:
         dest: /etc/nginx/sites-available/nextjs
         content: |
           server {
-              listen 80;
-              server_name {{ domain_name }} _;
-              client_max_body_size 100M;
+            listen 80;
+            server_name {{ domain_name }};
 
-              location / {
-                  proxy_pass http://127.0.0.1:{{ app_port }};
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_cache_bypass $http_upgrade;
-              }
+            location / {
+              proxy_pass http://127.0.0.1:{{ app_port }};
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
+              proxy_set_header Connection 'upgrade';
+            }
           }
-        owner: root
-        group: root
-        mode: '0644'
-      tags: ['deploy']
 
-    - name: Enable Nginx site and reload
+    - name: Enable site
       ansible.builtin.shell: |
         ln -sf /etc/nginx/sites-available/nextjs /etc/nginx/sites-enabled/nextjs
         rm -f /etc/nginx/sites-enabled/default
         nginx -t
         systemctl reload nginx
-      tags: ['deploy']
 
-    # Step 9: Skip SSL (since no domain)
-    - name: Skipping SSL setup (no domain)
-      ansible.builtin.debug:
-        msg: "Skipping Certbot SSL setup — no domain provided. Access your app via http://{{ domain_name }}/"
-      tags: ['deploy']
+    # Step 9: Skip SSL
+    - ansible.builtin.debug:
+        msg: "SSL skipped. Access: http://{{ domain_name }}/"
 
-    # Step 10: Display Summary
-    - name: Display deployment summary
-      ansible.builtin.debug:
+    # Step 10: Summary
+    - ansible.builtin.debug:
         msg:
-          - "✅ Next.js App Deployed Successfully!"
-          - "Access it via: http://{{ domain_name }}/"
-          - "PM2 app name: {{ app_name }}"
-      tags: ['deploy']
+          - "Deployment complete!"
+          - "App running at http://{{ domain_name }}/"
+          - "PM2 Name: {{ app_name }}"
