@@ -115,23 +115,6 @@
           echo "/swapfile none swap sw 0 0" >> /etc/fstab
         fi
 
-    # Step 5.3: Safe .env.local
-    - name: Ensure env file exists
-      ansible.builtin.shell: |
-        if [ -f {{ app_directory }}/.env.example ]; then
-          cp {{ app_directory }}/.env.example {{ env_file }};
-        else
-          echo "# created by Ansible" > {{ env_file }};
-        fi
-        chown ubuntu:ubuntu {{ env_file }}
-        chmod 600 {{ env_file }}
-
-    - name: Notify about env
-      ansible.builtin.debug:
-        msg:
-          - "Edit env file manually: nano {{ env_file }}"
-          - "Add DATABASE_URL, NEXTAUTH_SECRET, AWS keys, etc."
-
     # Step 6: npm install + build
     - name: Install dependencies
       ansible.builtin.shell: |
