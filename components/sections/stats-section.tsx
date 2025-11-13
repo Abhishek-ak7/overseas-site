@@ -211,7 +211,8 @@ export function StatsSection() {
             </Link>
             <Link href="/universities">
             <button className="flex-1 px-6 py-4 bg-white border-2 border-primary text-primary rounded-xl hover:bg-primary hover:text-white transition-all font-semibold shadow-sm">
-              Check Eligibility
+              {/* Check Eligibility */}
+              hi class devops
             </button>
             </Link>
           </div>
