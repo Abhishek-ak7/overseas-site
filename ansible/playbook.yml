@@ -184,3 +184,4 @@
           - "Deployment complete!"
           - "App running at http://{{ domain_name }}/"
           - "PM2 Name: {{ app_name }}"
+
